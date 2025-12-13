@@ -101,6 +101,7 @@ class TVLineChart(ctk.CTkFrame):
         self.ws = None
         self.ws_thread = None
         self._countdown_job = None
+        self.timeframe = "ALL"
 
         # Figure
         self.fig = Figure(figsize=(8,4), dpi=100, constrained_layout=False)
@@ -142,6 +143,33 @@ class TVLineChart(ctk.CTkFrame):
         sec = (self.df.index[-1] - self.df.index[-2]).total_seconds()
         return (sec/86400.0)*0.8
 
+    def _apply_timeframe(self, tf: str):
+        if self.df.empty:
+            return self.df 
+
+        end = self.df.index.max()
+
+        if tf == "5D":
+            start = end - pd.Timedelta(days=5)
+        elif tf == "1M":
+            start = end - pd.DateOffset(months=1)
+        elif tf == "3M":
+            start = end - pd.DateOffset(months=3)
+        elif tf == "6M":
+            start = end - pd.DateOffset(months=6)
+        elif tf == "YTD":
+            start = pd.Timestamp(year=end.year, month=1, day=1)
+        elif tf == "1Y":
+            start = end - pd.DateOffset(years=1)
+        elif tf == "5Y":
+            start = end - pd.DateOffset(years=5)
+        elif tf == "ALL":
+            return self.df
+        else:
+            return self.df
+
+        return self.df.loc[self.df.index >= start]
+
     # ---- chart ----
     def draw_chart(self):
         self.ax.clear()
@@ -158,7 +186,9 @@ class TVLineChart(ctk.CTkFrame):
             self.canvas.draw_idle()
             return
 
-        df = self.df.sort_index().copy()
+        df = self._apply_timeframe(self.timeframe).sort_index().copy()
+
+
 
         # line
         for i in range(1, len(df)):
@@ -328,16 +358,40 @@ class AtlasDashboard(ctk.CTk):
         self._card(cards, 2, "Portfolio Value", fixed="$128,402")
 
         # Controls (TF + symbol)
+        # Controls (TF + range + symbol)
         ctrl = ctk.CTkFrame(main, fg_color="white")
         ctrl.pack(fill="x", padx=20)
 
-        for tf in ["1d","5m","15m","30m","1h","4h","1d"]:
-            ctk.CTkButton(ctrl,text=tf,width=50,
-                          command=lambda t=tf:self.change_tf(t)).pack(side="left", padx=4)
-        ctk.CTkLabel(ctrl,text="   ").pack(side="left")
+        # ---- interval buttons ----
+        for tf in ["1m","5m","15m","30m","1h","4h","1d"]:
+            ctk.CTkButton(
+                ctrl,
+                text=tf,
+                width=50,
+                command=lambda t=tf: self.change_tf(t)
+            ).pack(side="left", padx=4)
+
+        # ---- range buttons (ต่อจาก 1d) ----
+        ctk.CTkLabel(ctrl, text=" | ").pack(side="left", padx=6)
+
+        for tf in ["5D","1M","3M","6M","YTD","1Y","5Y","ALL"]:
+            ctk.CTkButton(
+                ctrl,
+                text=tf,
+                width=55,
+                command=lambda t=tf: self.change_range(t)
+            ).pack(side="left", padx=3)
+
+        # ---- symbol buttons ----
+        ctk.CTkLabel(ctrl, text="   ").pack(side="left", padx=10)
+
         for s in ["BTCUSDT","ETHUSDT","SOLUSDT"]:
-            ctk.CTkButton(ctrl,text=s,width=80,
-                          command=lambda ss=s:self.change_symbol(ss)).pack(side="left", padx=6)
+            ctk.CTkButton(
+                ctrl,
+                text=s,
+                width=80,
+                command=lambda ss=s: self.change_symbol(ss)
+            ).pack(side="left", padx=6)
 
         # Chart
         self.chart = TVLineChart(main, symbol="BTCUSDT", interval="30m")
@@ -348,6 +402,10 @@ class AtlasDashboard(ctk.CTk):
         self.live_eth = LivePrice(self.eth_price, self.eth_chg, "ethusdt")
 
         self.protocol("WM_DELETE_WINDOW", self.close_all)
+
+    def change_range(self, tf):
+        self.chart.timeframe = tf
+        self.chart.draw_chart()
 
     def _card(self, parent, col, title, fixed=None):
         c = ctk.CTkFrame(parent, fg_color="white", border_width=1, border_color="#E0E0E0")
