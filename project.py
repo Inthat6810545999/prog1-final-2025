@@ -8,6 +8,8 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.dates as mdates
 import datetime as dt
+import customtkinter
+from CTkMessagebox import CTkMessagebox
 
 # =========================
 # Helpers
@@ -17,14 +19,9 @@ def load_klines(symbol="BTCUSDT", interval="30m", limit=800) -> pd.DataFrame:
     params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    try:
-        r = requests.get(url, params=params, headers=headers, timeout=12)
-        r.raise_for_status()
-        raw = r.json()
-    except Exception as e:
-        print("KL REST ERROR:", e)
-        return pd.DataFrame(columns=["open","high","low","close","volume"],
-                            index=pd.to_datetime([]))
+    r = requests.get(url, params=params, headers=headers, timeout=12)
+    r.raise_for_status()
+    raw = r.json()
 
     df = pd.DataFrame(raw, columns=[
         "open_time","open","high","low","close","volume",
@@ -38,7 +35,6 @@ def load_klines(symbol="BTCUSDT", interval="30m", limit=800) -> pd.DataFrame:
     df.set_index("t", inplace=True)
     return df[["open","high","low","close","volume"]]
 
-
 # =========================
 # Live price card
 # =========================
@@ -49,7 +45,6 @@ class LivePrice:
         self.symbol = symbol.lower()
         self.ws = None
         self.stop_flag = False
-
         threading.Thread(target=self.run, daemon=True).start()
 
     def run(self):
@@ -63,14 +58,11 @@ class LivePrice:
         self.ws.run_forever()
 
     def on_msg(self, ws, msg):
-        if self.stop_flag:
-            return
+        if self.stop_flag: return
         d = json.loads(msg)
-
         price = float(d["c"])
         chg   = float(d["p"])
         pct   = float(d["P"])
-
         color = "#27AE60" if chg >= 0 else "#C0392B"
         sign = "+" if chg >= 0 else ""
 
@@ -86,8 +78,8 @@ class LivePrice:
         self.stop_flag = True
         try:
             if self.ws: self.ws.close()
-        except: pass
-
+        except:
+            pass
 
 # ============================================
 # TradingView-like line chart + colored volume
@@ -113,7 +105,7 @@ class TVLineChart(ctk.CTkFrame):
         self.canvas = FigureCanvasTkAgg(self.fig, self)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
-        # Countdown label (เหมือน TradingView)
+        # Countdown label
         self.count_lbl = ctk.CTkLabel(
             self, text="Close in 00:00", text_color="#27AE60",
             font=("Georgia", 12, "bold")
@@ -145,7 +137,7 @@ class TVLineChart(ctk.CTkFrame):
 
     def _apply_timeframe(self, tf: str):
         if self.df.empty:
-            return self.df 
+            return self.df
 
         end = self.df.index.max()
 
@@ -188,8 +180,6 @@ class TVLineChart(ctk.CTkFrame):
 
         df = self._apply_timeframe(self.timeframe).sort_index().copy()
 
-
-
         # line
         for i in range(1, len(df)):
             color = "#26A69A" if df["close"].iloc[i] >= df["close"].iloc[i-1] else "#EF5350"
@@ -207,7 +197,7 @@ class TVLineChart(ctk.CTkFrame):
         # last price + ohlc text
         last = df["close"].iloc[-1]
         self.ax.axhline(last, linestyle="--", color="#00C853", linewidth=1, zorder=2)
-
+        
         # last price green box (outside axis, not clipped)
         self.ax.annotate(
             f"{last:,.2f}",
@@ -241,28 +231,18 @@ class TVLineChart(ctk.CTkFrame):
             mdates.ConciseDateFormatter(self.ax.xaxis.get_major_locator())
         )
 
-        # tighten
         self.fig.canvas.draw_idle()
         self.canvas.draw_idle()
 
     # ---- websocket ----
     def start_ws(self):
-        # stop old one if exists
         self.stop_ws()
-
         url = f"wss://stream.binance.com:9443/ws/{self.symbol.lower()}@kline_{self.interval}"
 
         def on_msg(ws, msg):
             k = json.loads(msg)["k"]
             ts = pd.to_datetime(k["t"], unit="ms")
-            row = [
-                float(k["o"]),
-                float(k["h"]),
-                float(k["l"]),
-                float(k["c"]),
-                float(k["v"])
-            ]
-            # update/append
+            row = [float(k["o"]), float(k["h"]), float(k["l"]), float(k["c"]), float(k["v"])]
             self.df.loc[ts] = row
             self.df = self.df.sort_index().iloc[-1500:]
             self.after(0, self.draw_chart)
@@ -278,8 +258,7 @@ class TVLineChart(ctk.CTkFrame):
 
     def stop_ws(self):
         try:
-            if self.ws:
-                self.ws.close()
+            if self.ws: self.ws.close()
         except:
             pass
         self.ws = None
@@ -287,7 +266,8 @@ class TVLineChart(ctk.CTkFrame):
     # ---- countdown like TradingView ----
     def _update_countdown(self):
         tf_sec = self._get_tf_seconds(self.interval)
-        now = dt.datetime.utcnow()
+        # ใช้ timezone-aware แทน utcnow() (แก้ DeprecationWarning)
+        now = dt.datetime.now(dt.timezone.utc)
         next_close_ts = (int(now.timestamp()) // tf_sec + 1) * tf_sec
         remain = max(0, int(next_close_ts - now.timestamp()))
 
@@ -295,26 +275,178 @@ class TVLineChart(ctk.CTkFrame):
         ss = remain % 60
         self.count_lbl.configure(text=f"Close in {mm:02d}:{ss:02d}")
 
-        # reschedule every second
         self._countdown_job = self.after(1000, self._update_countdown)
 
     def refresh(self):
         self.df = load_klines(self.symbol, self.interval)
         self.draw_chart()
-        # restart WS with new tf/symbol
         self.start_ws()
         # restart countdown
         if self._countdown_job is not None:
-            self.after_cancel(self._countdown_job)
+            try: self.after_cancel(self._countdown_job)
+            except: pass
         self._update_countdown()
 
     def stop(self):
-        if self._countdown_job is not None:
-            try: self.after_cancel(self._countdown_job)
-            except: pass
+        try:
+            if self._countdown_job is not None:
+                self.after_cancel(self._countdown_job)
+        except: pass
         self.stop_ws()
 
+# =========================
+# Pages
+# =========================
+class OverviewPage(ctk.CTkFrame):
+    def __init__(self, parent, app):
+        super().__init__(parent, fg_color="#F4F4F4")
+        self.app = app
 
+        # --------------------
+        # Top cards
+        # --------------------
+        cards = ctk.CTkFrame(self, fg_color="white")
+        cards.pack(fill="x", padx=20, pady=20)
+        cards.grid_columnconfigure((0,1,2), weight=1)
+
+        app.btc_price, app.btc_chg = app._card(cards, 0, "BTC / USD")
+        app.eth_price, app.eth_chg = app._card(cards, 1, "ETH / USD")
+        app._card(cards, 2, "Portfolio Value", fixed="$128,402")
+
+        # --------------------
+        # Controls
+        # --------------------
+        ctrl = ctk.CTkFrame(self, fg_color="white")
+        ctrl.pack(fill="x", padx=20, pady=(0,10))
+
+        for tf in ["1m","5m","15m","30m","1h","4h","1d"]:
+            ctk.CTkButton(
+                ctrl, text=tf, width=50,
+                command=lambda t=tf: app.change_tf(t)
+            ).pack(side="left", padx=4)
+
+        ctk.CTkLabel(ctrl, text="  |  ").pack(side="left", padx=6)
+
+        for tf in ["5D","1M","3M","6M","YTD","1Y","5Y","ALL"]:
+            ctk.CTkButton(
+                ctrl, text=tf, width=55,
+                command=lambda t=tf: app.change_range(t)
+            ).pack(side="left", padx=3)
+
+        ctk.CTkLabel(ctrl, text="   ").pack(side="left", padx=10)
+
+        for s in ["BTCUSDT","ETHUSDT","SOLUSDT"]:
+            ctk.CTkButton(
+                ctrl, text=s, width=80,
+                command=lambda ss=s: app.change_symbol(ss)
+            ).pack(side="left", padx=6)
+
+        # --------------------
+        # Chart (มีแค่ตัวเดียว!)
+        # --------------------
+        self.chart = TVLineChart(self, symbol="BTCUSDT", interval="30m")
+        self.chart.pack(fill="both", expand=True, padx=20, pady=10)
+
+        # --------------------
+        # Live prices
+        # --------------------
+        app.live_btc = LivePrice(app.btc_price, app.btc_chg, "btcusdt")
+        app.live_eth = LivePrice(app.eth_price, app.eth_chg, "ethusdt")
+
+class OrdersPage(ctk.CTkFrame):
+    """
+    ฟอร์มคำสั่งซื้อขาย (ยังไม่ต่อ Binance)
+    - BUY/SELL
+    - Market / Limit
+    - Quantity, Price (enable เฉพาะ Limit)
+    - คำนวณมูลค่ารวม
+    - ปุ่มยืนยัน (แค่ print / แสดง popup)
+    """
+    def __init__(self, parent):
+        super().__init__(parent, fg_color="#F4F4F4")
+
+        box = ctk.CTkFrame(self, fg_color="white")
+        box.pack(padx=40, pady=40, fill="x")
+
+        ctk.CTkLabel(box, text="Place Order",
+                     font=("Georgia", 22, "bold")).pack(anchor="w", padx=10, pady=10)
+
+        form = ctk.CTkFrame(box, fg_color="white")
+        form.pack(fill="x", padx=10, pady=10)
+
+        # BUY/SELL
+        self.side = ctk.StringVar(value="BUY")
+        side_switch = ctk.CTkSegmentedButton(
+            form, values=["BUY","SELL"], variable=self.side, width=200
+        )
+        side_switch.pack(anchor="w", pady=6)
+
+        # Market / Limit
+        self.otype = ctk.StringVar(value="Market")
+        type_switch = ctk.CTkSegmentedButton(
+            form, values=["Market","Limit"], variable=self.otype, width=200
+        )
+        type_switch.pack(anchor="w", pady=6)
+
+        # Inputs
+        self.qty = ctk.CTkEntry(form, placeholder_text="Quantity (e.g. 0.01)")
+        self.qty.pack(fill="x", pady=6)
+
+        self.price = ctk.CTkEntry(form, placeholder_text="Price (for Limit)")
+        self.price.pack(fill="x", pady=6)
+
+        # Total
+        self.total_lbl = ctk.CTkLabel(form, text="Total: --", font=("Georgia", 14))
+        self.total_lbl.pack(anchor="w", pady=6)
+
+        # Submit
+        self.btn = ctk.CTkButton(form, text="BUY", fg_color="#2ECC71", command=self.submit)
+        self.btn.pack(fill="x", pady=12)
+
+        # bindings
+        self.side.trace_add("write", self._refresh_btn)
+        self.otype.trace_add("write", self._refresh_price_state)
+        self.qty.bind("<KeyRelease>", lambda e: self._recalc_total())
+        self.price.bind("<KeyRelease>", lambda e: self._recalc_total())
+        self._refresh_price_state()
+
+    def _refresh_btn(self, *args):
+        if self.side.get() == "BUY":
+            self.btn.configure(text="BUY", fg_color="#2ECC71")
+        else:
+            self.btn.configure(text="SELL", fg_color="#E74C3C")
+
+    def _refresh_price_state(self, *args):
+        is_limit = self.otype.get() == "Limit"
+        self.price.configure(state="normal" if is_limit else "disabled")
+        self._recalc_total()
+
+    def _recalc_total(self):
+        try:
+            q = float(self.qty.get())
+        except:
+            self.total_lbl.configure(text="Total: --")
+            return
+        if self.otype.get() == "Limit":
+            try:
+                p = float(self.price.get())
+            except:
+                self.total_lbl.configure(text="Total: --")
+                return
+            total = q * p
+        else:
+            # Market: แสดงเฉพาะจำนวน (ราคาจริงไม่รู้ เพราะยังไม่ต่อ API)
+            total = q
+        self.total_lbl.configure(text=f"Total: {total:,.4f}")
+
+    def submit(self):
+        if not self.qty.get().strip():
+            CTkMessagebox(
+                title="Error",
+                message="Please enter quantity.",
+                icon="cancel"
+            )
+            return
 # =========================
 # Dashboard
 # =========================
@@ -323,7 +455,7 @@ class AtlasDashboard(ctk.CTk):
         super().__init__()
         ctk.set_appearance_mode("light")
 
-        self.title("FirstForFun(D) — TradingView Line Dashboard")
+        self.title("FirstForFun(D) — Python Line Dashboard")
         self.geometry("1500x850")
 
         self.grid_columnconfigure(1, weight=1)
@@ -339,96 +471,76 @@ class AtlasDashboard(ctk.CTk):
                      font=("Georgia", 30, "bold")
         ).pack(pady=40)
 
+        # Main container (switch pages)
+        self.container = ctk.CTkFrame(self, fg_color="#F4F4F4")
+        self.container.grid(row=0, column=1, sticky="nsew")
+
+        # Pages
+        self.pages = {
+            "Overview": OverviewPage(self.container, self),
+            "Orders": OrdersPage(self.container)
+        }
+        self.current_page = None
+
+        # Sidebar buttons
         for m in ["Overview","Orders","Markets","Insights","Wallet","Settings"]:
-            ctk.CTkButton(side, text=m, width=180,
-                          fg_color="#1B263B", hover_color="#415A77"
+            ctk.CTkButton(
+                side, text=m, width=180,
+                fg_color="#1B263B", hover_color="#415A77",
+                command=(lambda x=m: self.show(x)) if m in self.pages else None
             ).pack(pady=8)
 
-        # Main
-        main = ctk.CTkFrame(self, fg_color="#F4F4F4")
-        main.grid(row=0, column=1, sticky="nsew")
-
-        # Top cards
-        cards = ctk.CTkFrame(main, fg_color="white")
-        cards.pack(fill="x", padx=20, pady=20)
-        cards.grid_columnconfigure((0,1,2), weight=1)
-
-        self.btc_price, self.btc_chg = self._card(cards, 0, "BTC / USD")
-        self.eth_price, self.eth_chg = self._card(cards, 1, "ETH / USD")
-        self._card(cards, 2, "Portfolio Value", fixed="$128,402")
-
-        # Controls (TF + symbol)
-        # Controls (TF + range + symbol)
-        ctrl = ctk.CTkFrame(main, fg_color="white")
-        ctrl.pack(fill="x", padx=20)
-
-        # ---- interval buttons ----
-        for tf in ["1m","5m","15m","30m","1h","4h","1d"]:
-            ctk.CTkButton(
-                ctrl,
-                text=tf,
-                width=50,
-                command=lambda t=tf: self.change_tf(t)
-            ).pack(side="left", padx=4)
-
-        # ---- range buttons (ต่อจาก 1d) ----
-        ctk.CTkLabel(ctrl, text=" | ").pack(side="left", padx=6)
-
-        for tf in ["5D","1M","3M","6M","YTD","1Y","5Y","ALL"]:
-            ctk.CTkButton(
-                ctrl,
-                text=tf,
-                width=55,
-                command=lambda t=tf: self.change_range(t)
-            ).pack(side="left", padx=3)
-
-        # ---- symbol buttons ----
-        ctk.CTkLabel(ctrl, text="   ").pack(side="left", padx=10)
-
-        for s in ["BTCUSDT","ETHUSDT","SOLUSDT"]:
-            ctk.CTkButton(
-                ctrl,
-                text=s,
-                width=80,
-                command=lambda ss=s: self.change_symbol(ss)
-            ).pack(side="left", padx=6)
-
-        # Chart
-        self.chart = TVLineChart(main, symbol="BTCUSDT", interval="30m")
-        self.chart.pack(fill="both", expand=True, padx=20, pady=10)
-
-        # Live prices
-        self.live_btc = LivePrice(self.btc_price, self.btc_chg, "btcusdt")
-        self.live_eth = LivePrice(self.eth_price, self.eth_chg, "ethusdt")
-
+        self.show("Overview")
         self.protocol("WM_DELETE_WINDOW", self.close_all)
+    def _get_chart(self):
+        if self.current_page and hasattr(self.current_page, "chart"):
+            return self.current_page.chart
+        return None
 
+    # ------- page switch -------
+    def show(self, name):
+        if self.current_page:
+            self.current_page.pack_forget()
+        self.current_page = self.pages[name]
+        self.current_page.pack(fill="both", expand=True)
+
+    # ------- chart controls (Overview uses) -------
     def change_range(self, tf):
-        self.chart.timeframe = tf
-        self.chart.draw_chart()
+        chart = self._get_chart()
+        if chart:
+            chart.timeframe = tf
+            chart.draw_chart()
+    def change_tf(self, tf):
+        chart = self._get_chart()
+        if not chart:
+            return
+        chart.interval = tf
+        chart.refresh()
 
+    def change_symbol(self, sym):
+        chart = self._get_chart()
+        if not chart:
+            return
+        chart.stop_ws()
+        chart.symbol = sym.upper()
+        chart.refresh()
+
+
+    # ------- cards -------
     def _card(self, parent, col, title, fixed=None):
         c = ctk.CTkFrame(parent, fg_color="white", border_width=1, border_color="#E0E0E0")
         c.grid(row=0, column=col, padx=10, pady=10, sticky="nsew")
-        ctk.CTkLabel(c,text=title,font=("Georgia",15)).pack(anchor="w", padx=15)
+        ctk.CTkLabel(c, text=title, font=("Georgia",15)).pack(anchor="w", padx=15)
         price = ctk.CTkLabel(c, text=fixed or "$--", font=("Georgia",30,"bold"))
         price.pack(anchor="w", padx=15)
         chg = ctk.CTkLabel(c, text="--", font=("Georgia",14))
         if not fixed: chg.pack(anchor="w", padx=15)
         return price, chg
 
-    def change_tf(self, tf):
-        self.chart.interval = tf
-        self.chart.refresh()
-
-    def change_symbol(self, sym):
-        self.chart.symbol = sym
-        self.chart.refresh()
-
     def close_all(self):
-        self.live_btc.stop()
-        self.live_eth.stop()
-        self.chart.stop()
+        chart = self._get_chart()
+        if chart:
+            chart.stop()
         self.destroy()
 
 
