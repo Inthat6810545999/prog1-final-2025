@@ -10,10 +10,27 @@ import matplotlib.dates as mdates
 import datetime as dt
 import customtkinter
 from CTkMessagebox import CTkMessagebox
-
-# =========================
-# Helpers
-# =========================
+FONT_FAMILY = "Inter"
+THEME = {
+    "light": {
+        "bg": "#F8FAFC",
+        "card": "#FFFFFF",
+        "border": "#FFFFFF",
+        "text": "#0F172A",
+        "sidebar": "#0D1B2A",
+        "button": "#1B263B",
+        "button_hover": "#A6ADB4"
+    },
+    "dark": {
+        "bg": "#0B1220",
+        "card": "#111827",
+        "border": "#1F2937",
+        "text": "#E5E7EB",
+        "sidebar": "#020617",
+        "button": "#1E293B",
+        "button_hover": "#334155"
+    }
+}
 def load_klines(symbol="BTCUSDT", interval="30m", limit=800) -> pd.DataFrame:
     url = "https://fapi.binance.com/fapi/v1/klines"
     params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
@@ -86,7 +103,7 @@ class LivePrice:
 # ============================================
 class TVLineChart(ctk.CTkFrame):
     def __init__(self, parent, symbol="BTCUSDT", interval="30m"):
-        super().__init__(parent, fg_color="white")
+        super().__init__(parent)
 
         self.symbol = symbol.upper()
         self.interval = interval
@@ -299,29 +316,40 @@ class TVLineChart(ctk.CTkFrame):
 # =========================
 class OverviewPage(ctk.CTkFrame):
     def __init__(self, parent, app):
-        super().__init__(parent, fg_color="#F4F4F4")
+        super().__init__(parent)
         self.app = app
 
         # --------------------
         # Top cards
         # --------------------
-        cards = ctk.CTkFrame(self, fg_color="white")
+        mode = ctk.get_appearance_mode().lower()
+        cards = ctk.CTkFrame(self, fg_color=THEME[mode]["bg"])
+
         cards.pack(fill="x", padx=20, pady=20)
         cards.grid_columnconfigure((0,1,2), weight=1)
 
         app.btc_price, app.btc_chg = app._card(cards, 0, "BTC / USD")
         app.eth_price, app.eth_chg = app._card(cards, 1, "ETH / USD")
-        app._card(cards, 2, "Portfolio Value", fixed="$128,402")
+        app._card(cards, 2, "Portfolio Value", fixed="$68,420")
 
         # --------------------
         # Controls
         # --------------------
-        ctrl = ctk.CTkFrame(self, fg_color="white")
+        ctrl = ctk.CTkFrame(self)
         ctrl.pack(fill="x", padx=20, pady=(0,10))
+
+        mode = ctk.get_appearance_mode().lower()
 
         for tf in ["1m","5m","15m","30m","1h","4h","1d"]:
             ctk.CTkButton(
-                ctrl, text=tf, width=50,
+                ctrl,
+                text=tf,
+                width=50,
+                fg_color=THEME[mode]["card"],
+                text_color=THEME[mode]["text"],
+                hover_color=THEME[mode]["button_hover"],
+                border_width=1,
+                border_color=THEME[mode]["border"],
                 command=lambda t=tf: app.change_tf(t)
             ).pack(side="left", padx=4)
 
@@ -329,17 +357,34 @@ class OverviewPage(ctk.CTkFrame):
 
         for tf in ["5D","1M","3M","6M","YTD","1Y","5Y","ALL"]:
             ctk.CTkButton(
-                ctrl, text=tf, width=55,
-                command=lambda t=tf: app.change_range(t)
+                ctrl,
+                text=tf,
+                width=55,
+                fg_color=THEME[mode]["card"],
+                text_color=THEME[mode]["text"],
+                hover_color=THEME[mode]["button_hover"],
+                border_width=1,
+                border_color=THEME[mode]["border"],
+                command=lambda t=tf: app.change_tf(t)
             ).pack(side="left", padx=3)
 
         ctk.CTkLabel(ctrl, text="   ").pack(side="left", padx=10)
 
+        mode = ctk.get_appearance_mode().lower()
+
         for s in ["BTCUSDT","ETHUSDT","SOLUSDT"]:
             ctk.CTkButton(
-                ctrl, text=s, width=80,
+                ctrl,
+                text=s,
+                width=80,
+                fg_color=THEME[mode]["card"],
+                text_color=THEME[mode]["text"],
+                hover_color=THEME[mode]["button_hover"],
+                border_width=1,
+                border_color=THEME[mode]["border"],
                 command=lambda ss=s: app.change_symbol(ss)
             ).pack(side="left", padx=6)
+
 
         # --------------------
         # Chart (มีแค่ตัวเดียว!)
@@ -363,15 +408,15 @@ class OrdersPage(ctk.CTkFrame):
     - ปุ่มยืนยัน (แค่ print / แสดง popup)
     """
     def __init__(self, parent):
-        super().__init__(parent, fg_color="#F4F4F4")
+        super().__init__(parent)
 
-        box = ctk.CTkFrame(self, fg_color="white")
+        box = ctk.CTkFrame(self)
         box.pack(padx=40, pady=40, fill="x")
 
         ctk.CTkLabel(box, text="Place Order",
-                     font=("Georgia", 22, "bold")).pack(anchor="w", padx=10, pady=10)
+                     font=(FONT_FAMILY, 22, "bold")).pack(anchor="w", padx=10, pady=10)
 
-        form = ctk.CTkFrame(box, fg_color="white")
+        form = ctk.CTkFrame(box)
         form.pack(fill="x", padx=10, pady=10)
 
         # BUY/SELL
@@ -465,7 +510,7 @@ class OrdersPage(ctk.CTkFrame):
         # ---- SUCCESS POPUP ----
         msg = f"{self.side.get()} order placed!\nQuantity: {qty}"
         if otype == "Limit":
-            msg += f"\nPrice: {price}"
+            msg += f"\nPrice: {self.price}"
 
         CTkMessagebox(
             title="Success",
@@ -479,45 +524,70 @@ class OrdersPage(ctk.CTkFrame):
 class AtlasDashboard(ctk.CTk):
     def __init__(self):
         super().__init__()
-        ctk.set_appearance_mode("light")
+        ctk.set_appearance_mode("dark")
 
         self.title("FirstForFun(D) — Python Line Dashboard")
         self.geometry("1500x850")
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
-
+        mode = ctk.get_appearance_mode().lower()
         # Sidebar
-        side = ctk.CTkFrame(self, fg_color="#0D1B2A", width=220)
-        side.grid(row=0, column=0, sticky="ns")
-        side.grid_propagate(False)
+        self.sidebar = ctk.CTkFrame(
+            self,
+            fg_color=THEME[mode]["sidebar"],
+            width=220
+        )
+        self.sidebar.grid(row=0, column=0, sticky="ns")
 
-        ctk.CTkLabel(side, text="FirstFOr\nFun(D)",
-                     text_color="white",
-                     font=("Georgia", 30, "bold")
+        mode = ctk.get_appearance_mode().lower()
+
+        ctk.CTkLabel(
+            self.sidebar,
+            text="FirstFOr\nFun(D)",
+            text_color=THEME[mode]["text"],
+            font=("Georgia", 30, "bold")
         ).pack(pady=40)
 
+
         # Main container (switch pages)
-        self.container = ctk.CTkFrame(self, fg_color="#F4F4F4")
+        self.container = ctk.CTkFrame(self)
         self.container.grid(row=0, column=1, sticky="nsew")
 
         # Pages
         self.pages = {
             "Overview": OverviewPage(self.container, self),
-            "Orders": OrdersPage(self.container)
+            "Orders": OrdersPage(self.container),
+            "Settings": SettingsPage(self.container, self)
         }
         self.current_page = None
 
         # Sidebar buttons
-        for m in ["Overview","Orders","Markets","Insights","Wallet","Settings"]:
+        for m in ["Overview","Orders","Insights","Wallet","Settings"]:
+            mode = ctk.get_appearance_mode().lower()
+
             ctk.CTkButton(
-                side, text=m, width=180,
-                fg_color="#1B263B", hover_color="#415A77",
+                self.sidebar,
+                text=m,
+                width=180,
+                fg_color=THEME[mode]["button"],
+                hover_color=THEME[mode]["button_hover"],
                 command=(lambda x=m: self.show(x)) if m in self.pages else None
             ).pack(pady=8)
 
+
         self.show("Overview")
         self.protocol("WM_DELETE_WINDOW", self.close_all)
+
+    def apply_theme(self):
+        mode = ctk.get_appearance_mode().lower()
+
+        # background หลัก
+        self.container.configure(fg_color=THEME[mode]["bg"])
+
+        # sidebar
+        self.sidebar.configure(fg_color=THEME[mode]["sidebar"])
+
     def _get_chart(self):
         if self.current_page and hasattr(self.current_page, "chart"):
             return self.current_page.chart
@@ -554,20 +624,75 @@ class AtlasDashboard(ctk.CTk):
 
     # ------- cards -------
     def _card(self, parent, col, title, fixed=None):
-        c = ctk.CTkFrame(parent, fg_color="white", border_width=1, border_color="#E0E0E0")
+        mode = ctk.get_appearance_mode().lower()
+
+        c = ctk.CTkFrame(
+            parent,
+            fg_color=THEME[mode]["card"],
+            border_width=1,
+            border_color=THEME[mode]["border"]
+        )
         c.grid(row=0, column=col, padx=10, pady=10, sticky="nsew")
-        ctk.CTkLabel(c, text=title, font=("Georgia",15)).pack(anchor="w", padx=15)
-        price = ctk.CTkLabel(c, text=fixed or "$--", font=("Georgia",30,"bold"))
+
+        ctk.CTkLabel(
+            c,
+            text=title,
+            font=("Georgia", 15),
+            text_color=THEME[mode]["text"]
+        ).pack(anchor="w", padx=15)
+
+        price = ctk.CTkLabel(
+            c,
+            text=fixed or "$--",
+            font=(FONT_FAMILY, 30, "bold"),
+            text_color=THEME[mode]["text"]
+        )
         price.pack(anchor="w", padx=15)
-        chg = ctk.CTkLabel(c, text="--", font=("Georgia",14))
-        if not fixed: chg.pack(anchor="w", padx=15)
+
+        chg = ctk.CTkLabel(
+            c,
+            text="--",
+            font=("Georgia", 14)
+        )
+        if not fixed:
+            chg.pack(anchor="w", padx=15)
+
         return price, chg
+
 
     def close_all(self):
         chart = self._get_chart()
         if chart:
             chart.stop()
         self.destroy()
+
+class SettingsPage(ctk.CTkFrame):
+    def __init__(self, parent, app):
+        super().__init__(parent)
+        self.app = app
+
+        box = ctk.CTkFrame(self)
+        box.pack(padx=40, pady=40, fill="x")
+
+        ctk.CTkLabel(
+            box,
+            text="Appearance",
+            font=(FONT_FAMILY, 20, "bold")
+        ).pack(anchor="w", pady=(10, 20))
+
+        self.mode = ctk.StringVar(value=ctk.get_appearance_mode())
+
+        ctk.CTkSegmentedButton(
+            box,
+            values=["Light", "Dark"],
+            variable=self.mode,
+            command=self.change_mode
+        ).pack(anchor="w")
+    def change_mode(self, value):
+        ctk.set_appearance_mode(value.lower())
+        self.app.apply_theme()
+        self.app.show("Overview")  # บังคับ rebuild card
+
 
 
 if __name__ == "__main__":
