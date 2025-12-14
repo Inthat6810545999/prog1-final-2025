@@ -13,13 +13,13 @@ from CTkMessagebox import CTkMessagebox
 FONT_FAMILY = "Inter"
 THEME = {
     "light": {
-        "bg": "#F8FAFC",
+        "bg": "#FFFFFF",
         "card": "#FFFFFF",
         "border": "#FFFFFF",
         "text": "#0F172A",
         "sidebar": "#0D1B2A",
         "button": "#1B263B",
-        "button_hover": "#A6ADB4"
+        "button_hover": "#060709"
     },
     "dark": {
         "bg": "#0B1220",
@@ -51,6 +51,16 @@ def load_klines(symbol="BTCUSDT", interval="30m", limit=800) -> pd.DataFrame:
     df["t"] = pd.to_datetime(df["open_time"], unit="ms")
     df.set_index("t", inplace=True)
     return df[["open","high","low","close","volume"]]
+def fetch_crypto_news(symbol="BTC"):
+    url = "https://cryptopanic.com/api/developer/v2/posts/"
+    params = {
+        "auth_token": "20fb015789ccde364407bbb212448723078fc593",  # ← ตรงนี้
+        "currencies": symbol,
+        "public": "true"
+    }
+    r = requests.get(url, params=params, timeout=10)
+    r.raise_for_status()
+    return r.json()["results"]
 
 # =========================
 # Live price card
@@ -102,7 +112,7 @@ class LivePrice:
 # TradingView-like line chart + colored volume
 # ============================================
 class TVLineChart(ctk.CTkFrame):
-    def __init__(self, parent, symbol="BTCUSDT", interval="30m"):
+    def __init__(self, parent, symbol="BTCUSDT", interval="30m", ):
         super().__init__(parent)
 
         self.symbol = symbol.upper()
@@ -111,9 +121,16 @@ class TVLineChart(ctk.CTkFrame):
         self.ws_thread = None
         self._countdown_job = None
         self.timeframe = "ALL"
-
         # Figure
-        self.fig = Figure(figsize=(8,4), dpi=100, constrained_layout=False)
+        mode = ctk.get_appearance_mode().lower()
+
+        self.fig = Figure(
+            figsize=(8,4),
+            dpi=100,
+            constrained_layout=False,
+            facecolor=THEME['light']["bg"]   # ← ใช้ theme
+        )
+
         # leave room on right for price label box
         self.fig.subplots_adjust(right=0.86, hspace=0.12)
         self.ax = self.fig.add_subplot(2,1,1)
@@ -517,6 +534,55 @@ class OrdersPage(ctk.CTkFrame):
             message=msg,
             icon="check"
         )
+# =========================
+# Insights Page (Crypto News)
+# =========================
+class InsightsPage(ctk.CTkFrame):
+    def __init__(self, parent, app):
+        super().__init__(parent)
+        self.app = app
+
+        self.box = ctk.CTkScrollableFrame(self)
+        self.box.pack(fill="both", expand=True, padx=20, pady=20)
+
+        self.refresh_news()
+
+    def refresh_news(self):
+        for w in self.box.winfo_children():
+            w.destroy()
+
+        try:
+            symbol = self.app._get_chart().symbol.replace("USDT","")
+        except:
+            symbol = "BTC"
+
+        news = fetch_crypto_news(symbol)
+
+        for n in news[:10]:
+            title = n.get("title", "No title")
+            source = n.get("source", {}).get("title", "Unknown source")
+            time = n.get("published_at", "")
+            
+
+            ctk.CTkFrame(self.box, height=1).pack(fill="x", pady=6)
+
+            ctk.CTkLabel(
+                self.box,
+                text=f"📰 {title}",
+                wraplength=1000,
+                justify="left",
+                font=("Inter", 15, "bold")
+            ).pack(anchor="w", pady=(6,2))
+
+            ctk.CTkLabel(
+                self.box,
+                text=f"{source} | {time}",
+                font=("Inter", 12),
+                text_color="#94A3B8"
+            ).pack(anchor="w")
+
+        # refresh ทุก 60 วิ
+        self.after(60000, self.refresh_news)
 
 # =========================
 # Dashboard
@@ -525,6 +591,9 @@ class AtlasDashboard(ctk.CTk):
     def __init__(self):
         super().__init__()
         ctk.set_appearance_mode("dark")
+        mode = ctk.get_appearance_mode().lower()
+
+        self.configure(fg_color=THEME[mode]["bg"])
 
         self.title("FirstForFun(D) — Python Line Dashboard")
         self.geometry("1500x850")
@@ -556,8 +625,10 @@ class AtlasDashboard(ctk.CTk):
 
         # Pages
         self.pages = {
+            
             "Overview": OverviewPage(self.container, self),
             "Orders": OrdersPage(self.container),
+            "Insights": InsightsPage(self.container, self),
             "Settings": SettingsPage(self.container, self)
         }
         self.current_page = None
@@ -582,7 +653,10 @@ class AtlasDashboard(ctk.CTk):
     def apply_theme(self):
         mode = ctk.get_appearance_mode().lower()
 
-        # background หลัก
+        # root window (สำคัญมาก)
+        self.configure(fg_color=THEME[mode]["bg"])
+
+        # container
         self.container.configure(fg_color=THEME[mode]["bg"])
 
         # sidebar

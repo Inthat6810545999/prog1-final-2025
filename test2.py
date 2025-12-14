@@ -13,22 +13,30 @@ from CTkMessagebox import CTkMessagebox
 FONT_FAMILY = "Inter"
 THEME = {
     "light": {
-        "bg": "#F8FAFC",
+        "bg": "#FFFFFF",
         "card": "#FFFFFF",
-        "border": "#FFFFFF",
+        "border": "#E5E7EB",
         "text": "#0F172A",
-        "sidebar": "#0D1B2A",
-        "button": "#1B263B",
-        "button_hover": "#A6ADB4"
-    },
+
+        "sidebar": "#F1F5F9",          # ขาว/เทาอ่อน
+        "sidebar_text": "#0F172A",
+
+        "button": "#E5E7EB",
+        "button_hover": "#CBD5E1"
+    }
+,
     "dark": {
         "bg": "#0B1220",
         "card": "#111827",
         "border": "#1F2937",
         "text": "#E5E7EB",
+
         "sidebar": "#020617",
+        "sidebar_text": "#E5E7EB",
+
         "button": "#1E293B",
-        "button_hover": "#334155"
+        "button_hover": "#334155",
+        "button_text": "#E5E7EB"
     }
 }
 def load_klines(symbol="BTCUSDT", interval="30m", limit=800) -> pd.DataFrame:
@@ -102,8 +110,14 @@ class LivePrice:
 # TradingView-like line chart + colored volume
 # ============================================
 class TVLineChart(ctk.CTkFrame):
-    def __init__(self, parent, symbol="BTCUSDT", interval="30m"):
-        super().__init__(parent)
+    def __init__(self, parent, symbol="BTCUSDT", interval="30m", ):
+        mode = ctk.get_appearance_mode().lower()
+
+        super().__init__(
+            parent,
+            fg_color="#FFFFFF"   # ← ตรงนี้แหละ สีเทาหาย
+        )
+
 
         self.symbol = symbol.upper()
         self.interval = interval
@@ -111,16 +125,26 @@ class TVLineChart(ctk.CTkFrame):
         self.ws_thread = None
         self._countdown_job = None
         self.timeframe = "ALL"
-
         # Figure
-        self.fig = Figure(figsize=(8,4), dpi=100, constrained_layout=False)
+        mode = ctk.get_appearance_mode().lower()
+
+        self.fig = Figure(
+            figsize=(8,4),
+            dpi=100,
+            constrained_layout=False,
+            facecolor="#FFFFFF"   
+        )
+
         # leave room on right for price label box
         self.fig.subplots_adjust(right=0.86, hspace=0.12)
         self.ax = self.fig.add_subplot(2,1,1)
         self.ax_vol = self.fig.add_subplot(2,1,2, sharex=self.ax)
 
         self.canvas = FigureCanvasTkAgg(self.fig, self)
-        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        canvas_widget = self.canvas.get_tk_widget()
+        canvas_widget.configure(bg='#FFFFFF')  # ← Tk canvas
+        canvas_widget.pack(fill="both", expand=True)
+
 
         # Countdown label
         self.count_lbl = ctk.CTkLabel(
@@ -182,7 +206,13 @@ class TVLineChart(ctk.CTkFrame):
     # ---- chart ----
     def draw_chart(self):
         self.ax.clear()
+
         self.ax_vol.clear()
+        for spine in self.ax.spines.values():
+            spine.set_color("#FFFFFF")
+
+        for spine in self.ax_vol.spines.values():
+            spine.set_color("#FFFFFF")
 
         bg = "#FFFFFF"
         grid = "#E6E6E6"
@@ -251,6 +281,7 @@ class TVLineChart(ctk.CTkFrame):
         self.fig.canvas.draw_idle()
         self.canvas.draw_idle()
 
+
     # ---- websocket ----
     def start_ws(self):
         self.stop_ws()
@@ -316,7 +347,12 @@ class TVLineChart(ctk.CTkFrame):
 # =========================
 class OverviewPage(ctk.CTkFrame):
     def __init__(self, parent, app):
-        super().__init__(parent)
+        mode = ctk.get_appearance_mode().lower()
+
+        super().__init__(
+            parent,
+            fg_color=THEME[mode]["bg"]   # <<<<< ตรงนี้
+        )
         self.app = app
 
         # --------------------
@@ -335,7 +371,12 @@ class OverviewPage(ctk.CTkFrame):
         # --------------------
         # Controls
         # --------------------
-        ctrl = ctk.CTkFrame(self)
+        ctrl = ctk.CTkFrame(
+            self,
+            fg_color=THEME[mode]["bg"]
+        )
+
+
         ctrl.pack(fill="x", padx=20, pady=(0,10))
 
         mode = ctk.get_appearance_mode().lower()
@@ -349,7 +390,7 @@ class OverviewPage(ctk.CTkFrame):
                 text_color=THEME[mode]["text"],
                 hover_color=THEME[mode]["button_hover"],
                 border_width=1,
-                border_color=THEME[mode]["border"],
+                border_color=THEME[mode]["bg"],
                 command=lambda t=tf: app.change_tf(t)
             ).pack(side="left", padx=4)
 
@@ -524,7 +565,9 @@ class OrdersPage(ctk.CTkFrame):
 class AtlasDashboard(ctk.CTk):
     def __init__(self):
         super().__init__()
-        ctk.set_appearance_mode("dark")
+        mode = ctk.get_appearance_mode().lower()
+
+        self.configure(fg_color=THEME[mode]["bg"])
 
         self.title("FirstForFun(D) — Python Line Dashboard")
         self.geometry("1500x850")
@@ -545,13 +588,18 @@ class AtlasDashboard(ctk.CTk):
         ctk.CTkLabel(
             self.sidebar,
             text="FirstFOr\nFun(D)",
-            text_color=THEME[mode]["text"],
+        text_color=THEME[mode].get("sidebar_text", THEME[mode]["text"])
+        ,
             font=("Georgia", 30, "bold")
         ).pack(pady=40)
 
 
         # Main container (switch pages)
-        self.container = ctk.CTkFrame(self)
+        self.container = ctk.CTkFrame(
+            self,
+            fg_color=THEME[mode]["bg"]
+        )
+
         self.container.grid(row=0, column=1, sticky="nsew")
 
         # Pages
@@ -582,7 +630,10 @@ class AtlasDashboard(ctk.CTk):
     def apply_theme(self):
         mode = ctk.get_appearance_mode().lower()
 
-        # background หลัก
+        # root window (สำคัญมาก)
+        self.configure(fg_color=THEME[mode]["bg"])
+
+        # container
         self.container.configure(fg_color=THEME[mode]["bg"])
 
         # sidebar
