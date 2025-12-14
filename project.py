@@ -51,6 +51,12 @@ def load_klines(symbol="BTCUSDT", interval="30m", limit=800) -> pd.DataFrame:
     df["t"] = pd.to_datetime(df["open_time"], unit="ms")
     df.set_index("t", inplace=True)
     return df[["open","high","low","close","volume"]]
+
+def fetch_price(symbol="BTCUSDT"):
+    url = "https://api.binance.com/api/v3/ticker/price"
+    r = requests.get(url, params={"symbol": symbol}, timeout=8)
+    r.raise_for_status()
+    return float(r.json()["price"])
 def fetch_crypto_news(symbol="BTC"):
     url = "https://cryptopanic.com/api/developer/v2/posts/"
     params = {
@@ -583,6 +589,80 @@ class InsightsPage(ctk.CTkFrame):
 
         # refresh ทุก 60 วิ
         self.after(60000, self.refresh_news)
+# =========================
+# Wallet Page
+# =========================
+class WalletPage(ctk.CTkFrame):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        # ---- MOCK PORTFOLIO (แก้ได้ตามใจ) ----
+        self.portfolio = [
+            {"symbol": "BTCUSDT", "qty": 0.25, "avg": 42000},
+            {"symbol": "ETHUSDT", "qty": 3.0,  "avg": 2300},
+            {"symbol": "SOLUSDT", "qty": 20,   "avg": 95},
+        ]
+
+        self.container = ctk.CTkFrame(self)
+        self.container.pack(fill="both", expand=True, padx=30, pady=30)
+
+        self.title = ctk.CTkLabel(
+            self.container,
+            text="💼 My Wallet",
+            font=("Georgia", 26, "bold")
+        )
+        self.title.pack(anchor="w", pady=(0,20))
+
+        self.table = ctk.CTkFrame(self.container)
+        self.table.pack(fill="x")
+
+        self.draw_wallet()
+
+    def draw_wallet(self):
+        for w in self.table.winfo_children():
+            w.destroy()
+
+        headers = ["Asset", "Qty", "Avg Price", "Last Price", "Value", "PnL %"]
+        for i, h in enumerate(headers):
+            ctk.CTkLabel(
+                self.table,
+                text=h,
+                font=("Inter", 13, "bold"),
+                width=140
+            ).grid(row=0, column=i, padx=6, pady=6, sticky="w")
+
+        total_value = 0
+
+        for r, item in enumerate(self.portfolio, start=1):
+            price = fetch_price(item["symbol"])
+            value = item["qty"] * price
+            pnl = (price - item["avg"]) / item["avg"] * 100
+            total_value += value
+
+            color = "#27AE60" if pnl >= 0 else "#E74C3C"
+
+            row = [
+                item["symbol"].replace("USDT",""),
+                f"{item['qty']}",
+                f"${item['avg']:,.2f}",
+                f"${price:,.2f}",
+                f"${value:,.2f}",
+                f"{pnl:+.2f}%"
+            ]
+
+            for c, val in enumerate(row):
+                ctk.CTkLabel(
+                    self.table,
+                    text=val,
+                    text_color=color if c == 5 else None
+                ).grid(row=r, column=c, padx=6, pady=4, sticky="w")
+
+        ctk.CTkLabel(
+            self.container,
+            text=f"Total Value: ${total_value:,.2f}",
+            font=("Georgia", 18, "bold"),
+            text_color="#00C853"
+        ).pack(anchor="e", pady=(20,0))
 
 # =========================
 # Dashboard
@@ -629,6 +709,7 @@ class AtlasDashboard(ctk.CTk):
             "Overview": OverviewPage(self.container, self),
             "Orders": OrdersPage(self.container),
             "Insights": InsightsPage(self.container, self),
+            "Wallet": WalletPage(self.container),
             "Settings": SettingsPage(self.container, self)
         }
         self.current_page = None
